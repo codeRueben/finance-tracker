@@ -2,6 +2,11 @@ from data_import_and_preprocessing import load_data, clean_data
 from categorization_and_analysis import categorize_transactions, summary_report
 from visualization_plotly import plot_expense_distribution, plot_monthly_trends
 import streamlit as st
+import pandas as pd
+import numpy as np
+
+# AI
+from sklearn.linear_model import LinearRegression
 
 st.set_page_config(page_title="Personal Finance Tracker", layout="wide")
 
@@ -11,9 +16,28 @@ st.sidebar.info("Upload your data and explore trends!")
 
 menu = st.sidebar.radio(
     "Select Page",
-    ["Upload Data", "Summary & Analytics", "Visualize", "About"],
-    format_func=lambda x: "📈 "+x if x == "Visualize" else x
+    ["Upload Data", "Summary & Analytics", "Visualize", "Predict Next Month", "About"],
+    format_func=lambda x: "🤖 "+x if "Predict" in x else ("📈 "+x if x == "Visualize" else x)
 )
+
+def predict_next_month(df):
+    # Suppose df has a "Date" column (month) and "Amount" column
+    if 'Date' not in df.columns or 'Amount' not in df.columns:
+        st.info("Date or Amount column missing for prediction.")
+        return
+    df['Date'] = pd.to_datetime(df['Date'])
+    monthly = df.groupby(df['Date'].dt.to_period('M'))['Amount'].sum().reset_index()
+    monthly['DateInt'] = np.arange(len(monthly))
+    X = monthly[['DateInt']]
+    y = monthly['Amount']
+    if len(X) < 2:
+        st.info("Need at least two months of data for prediction.")
+        return
+    model = LinearRegression().fit(X, y)
+    pred_next = model.predict([[len(monthly)]])[0]
+    st.metric("Predicted Next Month Expense", f"₹{pred_next:.2f}")
+    st.line_chart(pd.DataFrame({'Actual': y, 'Predicted': np.append(model.predict(X), pred_next)}, index=monthly['Date'].astype(str).tolist() + ['Next']))
+
 
 def main():
     if menu == "Upload Data":
@@ -65,11 +89,19 @@ def main():
         else:
             st.info("Please upload data first in the Upload Data tab.")
 
+    elif menu == "Predict Next Month":
+        st.markdown("## 🤖 AI Expense Prediction")
+        df = st.session_state.get('df', None)
+        if df is not None:
+            predict_next_month(df)
+        else:
+            st.info("Please upload data first in the Upload Data tab.")
+
     elif menu == "About":
         st.markdown("""
         ## ℹ️ About This Project
         Built by Your Name.  
-        Upload your financial transactions and interactively explore your personal spending, savings, and trends.
+        Upload your financial transactions and interactively explore your personal spending, savings, trends, and predictions.
         """)
 
 if __name__ == "__main__":
