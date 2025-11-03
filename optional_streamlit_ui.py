@@ -4,24 +4,26 @@ from visualization_plotly import plot_expense_distribution, plot_monthly_trends
 import streamlit as st
 import pandas as pd
 import numpy as np
-
-# AI
 from sklearn.linear_model import LinearRegression
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.feature_extraction.text import CountVectorizer
 
 st.set_page_config(page_title="Personal Finance Tracker", layout="wide")
 
 st.markdown("# 💸 Personal Finance Tracker")
 st.sidebar.markdown("## 🧭 Navigation")
-st.sidebar.info("Upload your data and explore trends!")
+st.sidebar.info("Upload your data and explore AI-powered insights!")
 
 menu = st.sidebar.radio(
-    "Select Page",
-    ["Upload Data", "Summary & Analytics", "Visualize", "Predict Next Month", "About"],
-    format_func=lambda x: "🤖 "+x if "Predict" in x else ("📈 "+x if x == "Visualize" else x)
+    "Go to",
+    [
+        "Upload Data", "Summary & Analytics", "Visualize", "Predict Next Month",
+        "AI Category Suggestion", "Expense Anomaly Detection", "Smart Savings Tips", "About"
+    ],
+    format_func=lambda x: "🤖 "+x if "AI" in x or "Predict" in x else ("📈 "+x if x == "Visualize" else x)
 )
 
 def predict_next_month(df):
-    # Suppose df has a "Date" column (month) and "Amount" column
     if 'Date' not in df.columns or 'Amount' not in df.columns:
         st.info("Date or Amount column missing for prediction.")
         return
@@ -38,6 +40,35 @@ def predict_next_month(df):
     st.metric("Predicted Next Month Expense", f"₹{pred_next:.2f}")
     st.line_chart(pd.DataFrame({'Actual': y, 'Predicted': np.append(model.predict(X), pred_next)}, index=monthly['Date'].astype(str).tolist() + ['Next']))
 
+def train_category_model(df):
+    if 'Description' not in df.columns or 'Category' not in df.columns:
+        return None, None
+    X = df['Description'].astype(str)
+    y = df['Category']
+    vect = CountVectorizer()
+    X_counts = vect.fit_transform(X)
+    model = MultinomialNB()
+    model.fit(X_counts, y)
+    return model, vect
+
+def predict_category(desc, model, vect):
+    x_test = vect.transform([desc])
+    pred = model.predict(x_test)[0]
+    return pred
+
+def flag_anomalies(df):
+    df['z'] = (df['Amount'] - df['Amount'].mean()) / df['Amount'].std()
+    anomalies = df[abs(df['z']) > 2]
+    return anomalies
+
+def savings_tip(df):
+    food = df[df['Category']=="Food"]['Amount'].sum()
+    transport = df[df['Category']=="Transport"]['Amount'].sum()
+    if food > 0.3*df['Amount'].sum():
+        return "You spend a lot on Food. Consider meal prepping or limiting eating out."
+    if transport > 0.2*df['Amount'].sum():
+        return "High Transport costs detected. Try pooling rides or using public transport."
+    return "Your spending is balanced. Keep it up!"
 
 def main():
     if menu == "Upload Data":
@@ -90,18 +121,56 @@ def main():
             st.info("Please upload data first in the Upload Data tab.")
 
     elif menu == "Predict Next Month":
-        st.markdown("## 🤖 AI Expense Prediction")
+        st.markdown("## 🤖 Next Month Expense Prediction")
         df = st.session_state.get('df', None)
         if df is not None:
             predict_next_month(df)
         else:
             st.info("Please upload data first in the Upload Data tab.")
 
+    elif menu == "AI Category Suggestion":
+        st.header("🤖 AI-based Category Suggestion")
+        df = st.session_state.get('df', None)
+        if df is not None:
+            with st.spinner("Training model..."):
+                model, vect = train_category_model(df)
+            new_desc = st.text_input("Enter new transaction description for suggestion:")
+            if new_desc and model and vect:
+                suggested = predict_category(new_desc, model, vect)
+                st.success(f"Suggested Category: {suggested}")
+            elif new_desc:
+                st.warning("Model could not be trained (need 'Description' and 'Category' columns).")
+        else:
+            st.info("Upload data first for training.")
+
+    elif menu == "Expense Anomaly Detection":
+        st.header("⚠️ Unusual Expenses (Outlier Detection)")
+        df = st.session_state.get('df', None)
+        if df is not None:
+            anomalies = flag_anomalies(df)
+            if not anomalies.empty:
+                st.write("These transactions have unusual (outlier) amounts:")
+                st.dataframe(anomalies)
+            else:
+                st.success("No anomalies detected.")
+        else:
+            st.info("Upload data first.")
+
+    elif menu == "Smart Savings Tips":
+        st.header("💡 Personalized Savings Suggestions")
+        df = st.session_state.get('df', None)
+        if df is not None:
+            tip = savings_tip(df)
+            st.info(tip)
+        else:
+            st.info("Upload data first.")
+
     elif menu == "About":
         st.markdown("""
         ## ℹ️ About This Project
-        Built by Your Name.  
+        Built by Your Name.
         Upload your financial transactions and interactively explore your personal spending, savings, trends, and predictions.
+        AI features include category suggestion, anomaly detection, and tailored savings advice.
         """)
 
 if __name__ == "__main__":
